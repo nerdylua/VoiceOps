@@ -8,7 +8,7 @@
 #define WIFI_PASSWORD "nihaalsp7"
 
 // Firebase credentials
-#define API_KEY "AIzaSyCxDhUelfE9KRACL-CAIaWQ9fUOZt5VKCU"
+#define API_KEY "your_gemini_api_key"
 #define DATABASE_URL "https://iot-el-1842a-default-rtdb.asia-southeast1.firebasedatabase.app/"
 #define USER_EMAIL "testuser@abc.com"
 #define USER_PASSWORD "12345678"
@@ -161,8 +161,6 @@ void loop() {
     lastFirebaseCheck = currentTime;
   }
   
-
-  
   delay(50);  // Small delay to prevent overwhelming the system
 }
 
@@ -250,8 +248,6 @@ void controlServo(String state) {
     Serial.println("🔧 Servo OFF (door closed)");
   }
 }
-
-
 
 void releaseStepper() {
   // Cut power to coils to "release" the motor

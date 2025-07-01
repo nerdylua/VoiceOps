@@ -14,7 +14,7 @@ from flask_cors import CORS
 import threading
 
 # --- CONFIG ---
-GEMINI_API_KEY = "AIzaSyCxDhUelfE9KRACL-CAIaWQ9fUOZt5VKCU"
+GEMINI_API_KEY = "your_gemini_api_key"
 FIREBASE_DB_URL = "https://iot-el-1842a-default-rtdb.asia-southeast1.firebasedatabase.app/"
 FIREBASE_CRED_FILE = "firebase_key.json"
 
