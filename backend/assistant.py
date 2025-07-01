@@ -1,6 +1,6 @@
 import pyaudio
 import wave
-import whisper
+import speech_recognition as sr  # Add speech recognition
 import time
 import os
 import json
@@ -33,15 +33,52 @@ except Exception as e:
     exit(1)
 
 # --- TTS INIT ---
-tts_engine = pyttsx3.init()
-tts_engine.setProperty('rate', 150)  # Speech rate
-tts_engine.setProperty('volume', 0.9)  # Volume level (0.0 to 1.0)
+tts_engine = None
+
+def initialize_tts():
+    global tts_engine
+    if tts_engine is None:
+        try:
+            tts_engine = pyttsx3.init()
+            tts_engine.setProperty('rate', 150)
+            tts_engine.setProperty('volume', 0.9)
+            print("✅ TTS initialized successfully")
+        except Exception as e:
+            print(f"❌ TTS initialization failed: {e}")
+            tts_engine = None
 
 def speak(text: str):
     """Speak the given text using pyttsx3"""
-    print(f"🔊 Speaking: {text}")
-    tts_engine.say(text)
-    tts_engine.runAndWait()
+    try:
+        if tts_engine:
+            print(f"🔊 Speaking: {text}")
+            tts_engine.say(text)
+            tts_engine.runAndWait()
+    except Exception as e:
+        print(f"❌ TTS failed: {e}")
+
+# --- SPEECH RECOGNITION INIT ---
+speech_recognizer = None
+microphone = None
+
+def initialize_speech_recognition():
+    global speech_recognizer, microphone
+    if speech_recognizer is None:
+        try:
+            speech_recognizer = sr.Recognizer()
+            microphone = sr.Microphone()
+            print("🎙️ Calibrating microphone for ambient noise...")
+            with microphone as source:
+                speech_recognizer.adjust_for_ambient_noise(source, duration=1)
+            speech_recognizer.energy_threshold = 300
+            speech_recognizer.dynamic_energy_threshold = True
+            speech_recognizer.pause_threshold = 0.8
+            speech_recognizer.phrase_threshold = 0.3
+            print("✅ Speech recognition initialized successfully")
+        except Exception as e:
+            print(f"❌ Speech recognition initialization failed: {e}")
+            speech_recognizer = None
+            microphone = None
 
 # Initialize Gemini
 genai.configure(api_key=GEMINI_API_KEY)
@@ -224,7 +261,7 @@ def execute_actions(actions: list) -> bool:
     
     return success
 
-
+    
 
 def parse_command(command: str) -> dict:
     """Enhanced command parsing with Firebase integration"""
@@ -244,35 +281,32 @@ def parse_command(command: str) -> dict:
     result["firebase_success"] = firebase_success
     return result
 
-def process_text_command(text_command: str):
-    """Process a text command and return results"""
+def process_text_command(text_command: str, speak_response=True):
     if not text_command.strip():
         return None
-    
     print(f"\n📝 Processing text command: {text_command}")
     result = parse_command(text_command)
-    
     print(f"🧠 Intent: {result['intent']}")
     print(f"💬 Response: {result['response']}")
     print(f"⚙️ Actions: {result.get('actions', [])}")
-    
     if result.get('firebase_success'):
         print("✅ Firebase commands executed successfully")
     else:
         print("❌ Some Firebase commands failed")
-    
-    # Speak the response
-    speak(result['response'])
+    if speak_response and result.get('response'):
+        speak(result['response'])
     return result
 
-def process_voice_command(duration=3):
-    """Process a voice command and return results"""
+def process_voice_command(duration=3, language_code='en-US', speak_response=True):
     print(f"\n🎙️ Recording for {duration} seconds...")
-    audio_file = record_audio(duration=duration)
-    text = transcribe_audio(audio_file)
-    
+    # Try speech_recognition first
+    text = listen_for_speech(duration=duration, language_code=language_code)
+    if not text:
+        # Fallback to Whisper
+        audio_file = record_audio(duration=duration)
+        text = transcribe_audio(audio_file)
     if text:
-        return process_text_command(text)
+        return process_text_command(text, speak_response=speak_response)
     else:
         print("🤷 No command detected. Try again.")
         return None
@@ -287,10 +321,9 @@ def main():
     print("  • 'Turn on party mode' or 'Party on'")
     print("  • 'Emergency alert' or 'Trigger buzzer'")
     print("="*60)
-    
-    # Check command line arguments
     import sys
-    
+    initialize_tts()
+    initialize_speech_recognition()
     if len(sys.argv) > 1 and sys.argv[1] == '--api':
         print("\n🌐 Starting API Server Mode (for frontend)")
         print("🚀 Server running on http://127.0.0.1:5001")
@@ -301,7 +334,6 @@ def main():
         print("  • POST /api/voice/listen - Voice listening")
         print("  • POST /api/devices/control - Direct device control")
         print("\nPress Ctrl+C to stop the server")
-        
         try:
             app.run(host='127.0.0.1', port=5001, debug=False)
         except KeyboardInterrupt:
@@ -309,7 +341,6 @@ def main():
     else:
         print("\n🎯 CLI Mode - Interactive Voice Assistant")
         print("💡 Tip: Run with '--api' flag to start web server for frontend")
-        
         try:
             while True:
                 print("\n🎯 Choose input method:")
@@ -317,71 +348,96 @@ def main():
                 print("2. Type 'voice' for voice command")
                 print("3. Type 'quit' to exit")
                 print("4. Or directly type a command")
-                
                 user_input = input("\n💭 Your choice/command: ").strip()
-                
                 if user_input.lower() in ['quit', 'exit', 'q']:
                     print("\n👋 Exiting VoiceOps Assistant.")
                     break
                 elif user_input.lower() in ['voice', 'v']:
                     print("\nPrepare to speak your command...")
                     time.sleep(1)
-                    process_voice_command(duration=3)
+                    process_voice_command(duration=3, speak_response=True)
                 elif user_input.lower() in ['text', 't']:
                     text_command = input("\n📝 Enter your command: ").strip()
                     if text_command:
-                        process_text_command(text_command)
+                        process_text_command(text_command, speak_response=True)
                 elif user_input:
-                    # Direct command input
-                    process_text_command(user_input)
+                    process_text_command(user_input, speak_response=True)
                 else:
                     print("⚠️ Please enter a valid option or command.")
-                
                 time.sleep(0.5)
-        
         except KeyboardInterrupt:
             print("\n👋 Exiting VoiceOps Assistant.")
         except Exception as e:
             print(f"\n❌ Error: {e}")
 
+# --- SPEECH RECOGNITION (GOOGLE + SPHINX) ---
+def listen_for_speech(duration=5, language_code='en-US'):
+    """Listen for speech using speech_recognition library (Google + Sphinx fallback)"""
+    try:
+        if not speech_recognizer or not microphone:
+            print("❌ Speech recognition not initialized")
+            return ""
+        print(f"🎙️ Listening for {duration} seconds...")
+        with microphone as source:
+            audio = speech_recognizer.listen(source, timeout=duration, phrase_time_limit=duration)
+        print("🔄 Processing speech...")
+        # Try Google Speech Recognition first (multilingual)
+        try:
+            text = speech_recognizer.recognize_google(audio, language=language_code)
+            print(f"📝 Google SR: {text}")
+            return text
+        except sr.UnknownValueError:
+            print("❓ Google SR could not understand audio")
+        except sr.RequestError as e:
+            print(f"❌ Google SR error: {e}")
+        # Fallback to offline Sphinx (English/local)
+        try:
+            text = speech_recognizer.recognize_sphinx(audio)
+            print(f"📝 Sphinx SR: {text}")
+            return text
+        except sr.UnknownValueError:
+            print("❓ Sphinx SR could not understand audio")
+        except sr.RequestError as e:
+            print(f"❌ Sphinx SR error: {e}")
+        except Exception:
+            print("❌ Sphinx not available")
+        return ""
+    except sr.WaitTimeoutError:
+        print("⏰ Listening timeout - no speech detected")
+        return ""
+    except Exception as e:
+        print(f"❌ Speech recognition failed: {e}")
+        return ""
+
 # --- FLASK API ENDPOINTS ---
 @app.route('/health', methods=['GET'])
 def health_check():
-    """Health check endpoint for the frontend"""
-    whisper_status = model is not None
-    firebase_status = True  # Already initialized
-    tts_status = True  # Already initialized
-    
+    firebase_status = True
+    tts_status = tts_engine is not None
+    speech_status = speech_recognizer is not None
     return jsonify({
         'status': 'healthy',
         'service': 'VoiceOps Assistant API',
         'timestamp': datetime.now().isoformat(),
         'firebase_connected': firebase_status,
-        'whisper_loaded': whisper_status,
-        'tts_available': tts_status
+        'tts_available': tts_status,
+        'speech_recognition_ready': speech_status
     })
 
 @app.route('/api/voice/process', methods=['POST'])
 def api_process_text_command():
-    """Process text command via API"""
     try:
         data = request.get_json()
         if not data or 'command' not in data:
             return jsonify({'success': False, 'error': 'Command is required'}), 400
-        
         command = data['command'].strip()
         speak_response = data.get('speak_response', False)
-        
         if not command:
             return jsonify({'success': False, 'error': 'Command cannot be empty'}), 400
-        
-        # Process the command
         result = parse_command(command)
-        
-        # Speak response if requested
+        # Speak response in a thread if requested
         if speak_response and result.get('response'):
-            speak(result['response'])
-        
+            threading.Thread(target=speak, args=(result['response'],)).start()
         return jsonify({
             'success': True,
             'command': command,
@@ -391,39 +447,33 @@ def api_process_text_command():
             'firebase_success': result.get('firebase_success', False),
             'timestamp': datetime.now().isoformat()
         })
-        
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/voice/listen', methods=['POST'])
 def api_listen_voice_command():
-    """Listen for voice command via API"""
     try:
         data = request.get_json() or {}
         duration = data.get('duration', 3)
         speak_response = data.get('speak_response', False)
-        
-        # Ensure duration is within bounds
+        language_code = data.get('language_code', 'en-US')
         duration = max(1, min(duration, 10))
-        
-        # Record and transcribe
-        audio_file = record_audio(duration=duration)
-        text = transcribe_audio(audio_file)
-        
+        # Try speech_recognition first
+        text = listen_for_speech(duration=duration, language_code=language_code)
+        if not text:
+            # Fallback to Whisper
+            audio_file = record_audio(duration=duration)
+            text = transcribe_audio(audio_file)
         if not text:
             return jsonify({
                 'success': False,
                 'error': 'No speech detected',
                 'timestamp': datetime.now().isoformat()
             })
-        
-        # Process the command
         result = parse_command(text)
-        
-        # Speak response if requested
+        # Speak response in a thread if requested
         if speak_response and result.get('response'):
-            speak(result['response'])
-        
+            threading.Thread(target=speak, args=(result['response'],)).start()
         return jsonify({
             'success': True,
             'command': text,
@@ -433,7 +483,6 @@ def api_listen_voice_command():
             'firebase_success': result.get('firebase_success', False),
             'timestamp': datetime.now().isoformat()
         })
-        
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
