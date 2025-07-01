@@ -1,10 +1,5 @@
 # VoiceOps
 
-🧠 **AI-Driven Workspace Assistant with Voice & Telegram Interface**
-
----
-
-## Overview
 VoiceOps is a modern, voice-enabled AI assistant designed for workspace and office automation. It integrates voice recognition, natural language understanding, IoT device control, and real-time notifications to create a seamless, intelligent environment. VoiceOps can be controlled via voice commands or Telegram, and is extensible for a variety of smart office scenarios.
 
 ---
@@ -14,7 +9,6 @@ VoiceOps is a modern, voice-enabled AI assistant designed for workspace and offi
 - 🤖 **AI-Powered Assistant** (Gemini integration for natural conversation)
 - 🏠 **IoT Device Control** (lights, fan, party mode, buzzer, servo, etc.)
 - 📢 **Text-to-Speech Feedback** (speaks responses back to users)
-- 📱 **Telegram Bot Integration** (remote control and notifications)
 - 🌐 **REST API** for integration with other systems
 - 🔔 **Real-Time Alerts** for unsafe conditions or access control
 - 🛡️ **Secure, Role-Based Access** (optional, extensible)
@@ -63,14 +57,10 @@ VoiceOps is a modern, voice-enabled AI assistant designed for workspace and offi
    ```
 2. **Install dependencies:**
    ```bash
-   npm install
-   # or
    pnpm install
    ```
 3. **Run the frontend:**
    ```bash
-   npm run dev
-   # or
    pnpm dev
    ```
    The app will be available at `http://localhost:3000`.
