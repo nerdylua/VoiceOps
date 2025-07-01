@@ -1,8 +1,7 @@
 import pyaudio
 import wave
-import speech_recognition as sr  # Add speech recognition
+import speech_recognition as sr
 import time
-import os
 import json
 import google.generativeai as genai
 import firebase_admin
@@ -12,6 +11,7 @@ import pyttsx3
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import threading
+import whisper
 
 # --- CONFIG ---
 GEMINI_API_KEY = "your_gemini_api_key"
@@ -32,56 +32,66 @@ except Exception as e:
     print(f"❌ Firebase initialization failed: {e}")
     exit(1)
 
-# --- TTS INIT ---
-tts_engine = None
+# --- TTS FUNCTIONS ---
 
-def initialize_tts():
-    global tts_engine
-    if tts_engine is None:
-        try:
-            tts_engine = pyttsx3.init()
+def speak_and_shutdown(text: str):
+    """Speak using Windows SAPI directly to avoid run loop issues"""
+    try:
+        if text and text.strip():
+            # Use Windows SAPI directly via COM interface
+            import win32com.client
+            sapi = win32com.client.Dispatch("SAPI.SpVoice")
             
-            # Set speech rate and volume
-            tts_engine.setProperty('rate', 150)
-            tts_engine.setProperty('volume', 0.9)
-            
-            # Try to set a female voice
-            voices = tts_engine.getProperty('voices')
-            female_voice = None
-            
-            # Look for female voices (common keywords in voice names)
-            for voice in voices:
-                voice_name = voice.name.lower()
+            # Set female voice if available
+            voices = sapi.GetVoices()
+            for i in range(voices.Count):
+                voice = voices.Item(i)
+                voice_name = voice.GetDescription().lower()
                 if any(keyword in voice_name for keyword in ['female', 'woman', 'hazel', 'susan', 'samantha', 'victoria', 'fiona']):
-                    female_voice = voice.id
-                    print(f"🎤 Selected female voice: {voice.name}")
+                    sapi.Voice = voice
                     break
             
-            # If no specific female voice found, try to use the second available voice (often female)
-            if not female_voice and len(voices) > 1:
-                female_voice = voices[1].id
-                print(f"🎤 Using alternate voice: {voices[1].name}")
+            sapi.Rate = 2
+            sapi.Speak(text)
             
-            # Set the voice
-            if female_voice:
-                tts_engine.setProperty('voice', female_voice)
-            else:
-                print("🎤 Using default system voice")
-            
-            print("✅ TTS initialized successfully")
-        except Exception as e:
-            print(f"❌ TTS initialization failed: {e}")
-            tts_engine = None
+    except ImportError:
+        # Fallback to pyttsx3 if win32com not available
+        fallback_pyttsx3_speak(text)
+    except Exception as e:
+        print(f"❌ SAPI TTS failed: {e}")
+        fallback_pyttsx3_speak(text)
+
+def fallback_pyttsx3_speak(text: str):
+    """Fallback to pyttsx3 if SAPI fails"""
+    local_tts = None
+    try:
+        local_tts = pyttsx3.init()
+        local_tts.setProperty('rate', 150)
+        local_tts.setProperty('volume', 0.9)
+        
+        # Set female voice if available
+        voices = local_tts.getProperty('voices')
+        if len(voices) > 1:
+            local_tts.setProperty('voice', voices[1].id)
+        
+        local_tts.say(text)
+        local_tts.runAndWait()
+        
+    except Exception as e:
+        print(f"❌ Fallback TTS failed: {e}")
+    finally:
+        if local_tts:
+            try:
+                local_tts.stop()
+                del local_tts
+            except:
+                pass
 
 def speak(text: str):
-    """Speak the given text using pyttsx3"""
-    try:
-        if tts_engine:
-            print(f"🔊 Speaking: {text}")
-            tts_engine.say(text)
-            tts_engine.runAndWait()
-    except Exception as e:
-        print(f"❌ TTS failed: {e}")
+    """Start TTS in background thread"""
+    if text and text.strip():
+        tts_thread = threading.Thread(target=speak_and_shutdown, args=(text,), daemon=True)
+        tts_thread.start()
 
 # --- SPEECH RECOGNITION INIT ---
 speech_recognizer = None
@@ -93,14 +103,13 @@ def initialize_speech_recognition():
         try:
             speech_recognizer = sr.Recognizer()
             microphone = sr.Microphone()
-            print("🎙️ Calibrating microphone for ambient noise...")
             with microphone as source:
                 speech_recognizer.adjust_for_ambient_noise(source, duration=1)
             speech_recognizer.energy_threshold = 300
             speech_recognizer.dynamic_energy_threshold = True
             speech_recognizer.pause_threshold = 0.8
             speech_recognizer.phrase_threshold = 0.3
-            print("✅ Speech recognition initialized successfully")
+            print("✅ Speech recognition initialized")
         except Exception as e:
             print(f"❌ Speech recognition initialization failed: {e}")
             speech_recognizer = None
@@ -110,13 +119,11 @@ def initialize_speech_recognition():
 genai.configure(api_key=GEMINI_API_KEY)
 
 def send_firebase_command(device: str, command: str, value=None):
-    """Send command to Firebase Realtime Database, normalizing device names."""
-    # Normalize device name: both 'light' and 'lights' should map to 'lights'
+    """Send command to Firebase Realtime Database"""
     if device == 'light':
         device = 'lights'
-    # Add more normalization if needed
+    
     try:
-        timestamp = datetime.now().isoformat()
         if device in ["lights", "fan", "party"]:
             db.reference(f"/commands/{device}").set(command)
             print(f"🔥 Firebase: {device} -> {command}")
@@ -124,9 +131,9 @@ def send_firebase_command(device: str, command: str, value=None):
             db.reference("/commands/buzzer").set({
                 "status": "trigger",
                 "duration": value or 3000,
-                "timestamp": timestamp
+                "timestamp": datetime.now().isoformat()
             })
-            print(f"🔥 Firebase: buzzer triggered for {value}ms")
+            print(f"🔥 Firebase: buzzer triggered for {value or 3000}ms")
         return True
     except Exception as e:
         print(f"❌ Firebase command failed: {e}")
@@ -181,12 +188,10 @@ Respond only with valid JSON and nothing else.
         response = model.generate_content(prompt)
         raw_text = response.text.strip()
 
-        # 🔧 Remove Markdown code fences if present
+        # Remove Markdown code fences if present
         if raw_text.startswith("```") and raw_text.endswith("```"):
             lines = raw_text.splitlines()
             raw_text = "\n".join(line for line in lines if not line.startswith("```")).strip()
-
-        print("🔹 Gemini raw output (cleaned):\n", raw_text)
 
         return json.loads(raw_text)
 
@@ -198,7 +203,6 @@ Respond only with valid JSON and nothing else.
             "actions": []
         }
 
-# Load Whisper model lazily to avoid SSL issues on import
 model = None
 
 def get_whisper_model():
@@ -206,22 +210,20 @@ def get_whisper_model():
     global model
     if model is None:
         try:
-            print("📥 Loading Whisper model...")
-            model = whisper.load_model("base")  # Change to "tiny" if needed
-            print("✅ Whisper model loaded successfully")
+            model = whisper.load_model("base")
+            print("✅ Whisper model loaded")
         except Exception as e:
             print(f"❌ Failed to load Whisper model: {e}")
-            print("🔄 Trying to load 'tiny' model instead...")
             try:
                 model = whisper.load_model("tiny")
-                print("✅ Whisper 'tiny' model loaded successfully")
+                print("✅ Whisper 'tiny' model loaded")
             except Exception as e2:
                 print(f"❌ Failed to load any Whisper model: {e2}")
                 model = None
     return model
 
 def record_audio(filename="live.wav", duration=10):
-    """Records audio from mic and saves as a WAV file."""
+    """Records audio from mic and saves as a WAV file"""
     chunk = 1024
     format = pyaudio.paInt16
     channels = 1
@@ -229,7 +231,6 @@ def record_audio(filename="live.wav", duration=10):
 
     p = pyaudio.PyAudio()
     stream = p.open(format=format, channels=channels, rate=rate, input=True, frames_per_buffer=chunk)
-    print(f"\n🎙️ Recording for {duration} seconds...")
 
     frames = [stream.read(chunk) for _ in range(int(rate / chunk * duration))]
 
@@ -246,12 +247,10 @@ def record_audio(filename="live.wav", duration=10):
     return filename
 
 def transcribe_audio(file_path="live.wav") -> str:
-    """Transcribes audio using Whisper."""
+    """Transcribes audio using Whisper"""
     try:
-        print("🔁 Transcribing...")
         whisper_model = get_whisper_model()
         if whisper_model is None:
-            print("❌ No Whisper model available")
             return ""
         
         result = whisper_model.transcribe(file_path)
@@ -300,21 +299,14 @@ def parse_command(command: str) -> dict:
 def process_text_command(text_command: str, speak_response=True):
     if not text_command.strip():
         return None
-    print(f"\n📝 Processing text command: {text_command}")
+    
     result = parse_command(text_command)
-    print(f"🧠 Intent: {result['intent']}")
-    print(f"💬 Response: {result['response']}")
-    print(f"⚙️ Actions: {result.get('actions', [])}")
-    if result.get('firebase_success'):
-        print("✅ Firebase commands executed successfully")
-    else:
-        print("❌ Some Firebase commands failed")
     if speak_response and result.get('response'):
         speak(result['response'])
     return result
 
 def process_voice_command(duration=3, language_code='en-US', speak_response=True):
-    print(f"\n🎙️ Recording for {duration} seconds...")
+    print(f"🎙️ Listening for {duration} seconds...")
     # Try speech_recognition first
     text = listen_for_speech(duration=duration, language_code=language_code)
     if not text:
@@ -324,7 +316,7 @@ def process_voice_command(duration=3, language_code='en-US', speak_response=True
     if text:
         return process_text_command(text, speak_response=speak_response)
     else:
-        print("🤷 No command detected. Try again.")
+        print("🤷 No command detected")
         return None
 
 def main():
@@ -338,7 +330,6 @@ def main():
     print("  • 'Emergency alert' or 'Trigger buzzer'")
     print("="*60)
     import sys
-    initialize_tts()
     initialize_speech_recognition()
     if len(sys.argv) > 1 and sys.argv[1] == '--api':
         print("\n🌐 Starting API Server Mode (for frontend)")
@@ -428,16 +419,13 @@ def listen_for_speech(duration=5, language_code='en-US'):
 # --- FLASK API ENDPOINTS ---
 @app.route('/health', methods=['GET'])
 def health_check():
-    firebase_status = True
-    tts_status = tts_engine is not None
-    speech_status = speech_recognizer is not None
     return jsonify({
         'status': 'healthy',
         'service': 'VoiceOps Assistant API',
         'timestamp': datetime.now().isoformat(),
-        'firebase_connected': firebase_status,
-        'tts_available': tts_status,
-        'speech_recognition_ready': speech_status
+        'firebase_connected': True,
+        'tts_available': True,
+        'speech_recognition_ready': speech_recognizer is not None
     })
 
 @app.route('/api/voice/process', methods=['POST'])
@@ -463,12 +451,9 @@ def api_process_text_command():
             'timestamp': datetime.now().isoformat()
         }
         
-        # Start TTS in background if requested
+        # Add to TTS queue if requested
         if speak_response and result.get('response'):
-            def speak_async():
-                initialize_tts()
-                speak(result['response'])
-            threading.Thread(target=speak_async, daemon=True).start()
+            speak(result['response'])
         
         return jsonify(response_data)
     except Exception as e:
@@ -507,12 +492,9 @@ def api_listen_voice_command():
             'timestamp': datetime.now().isoformat()
         }
         
-        # Start TTS in background if requested
+        # Add to TTS queue if requested
         if speak_response and result.get('response'):
-            def speak_async():
-                initialize_tts()
-                speak(result['response'])
-            threading.Thread(target=speak_async, daemon=True).start()
+            speak(result['response'])
         
         return jsonify(response_data)
     except Exception as e:
@@ -547,9 +529,7 @@ def api_control_device():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-def run_flask_server():
-    """Run Flask server in a separate thread"""
-    app.run(host='127.0.0.1', port=5001, debug=False, use_reloader=False)
+
 
 if __name__ == "__main__":
     main()
