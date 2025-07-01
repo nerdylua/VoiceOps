@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
@@ -152,7 +152,7 @@ export function ControlsPage() {
         response.actions?.forEach(action => {
           if (action.device === 'fan') {
             setFanStatus(action.command === 'on');
-          } else if (action.device === 'light') {
+          } else if (action.device === 'lights' || action.device === 'light') {
             setLightStatus(action.command === 'on');
           } else if (action.device === 'party') {
             setPartyStatus(action.command === 'on');
@@ -192,7 +192,7 @@ export function ControlsPage() {
         response.actions?.forEach(action => {
           if (action.device === 'fan') {
             setFanStatus(action.command === 'on');
-          } else if (action.device === 'light') {
+          } else if (action.device === 'lights' || action.device === 'light') {
             setLightStatus(action.command === 'on');
           } else if (action.device === 'party') {
             setPartyStatus(action.command === 'on');
@@ -396,16 +396,16 @@ export function ControlsPage() {
                       id="duration"
                       value={listenDuration}
                       onChange={(e) => setListenDuration(Number(e.target.value))}
-                      className="bg-white/5 border border-white/20 rounded px-2 py-1 text-white text-sm"
+                      className="bg-white border border-white/20 rounded px-2 py-1 text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
-                      <option value={2}>2 sec (Quick)</option>
-                      <option value={3}>3 sec (Normal)</option>
-                      <option value={4}>4 sec (Medium)</option>
-                      <option value={6}>6 sec (Long)</option>
+                      <option value={2} className="text-gray-900 bg-white">2 sec (Quick)</option>
+                      <option value={3} className="text-gray-900 bg-white">3 sec (Normal)</option>
+                      <option value={4} className="text-gray-900 bg-white">4 sec (Medium)</option>
+                      <option value={6} className="text-gray-900 bg-white">6 sec (Long)</option>
                     </select>
                   </div>
 
-                  <div className="space-y-2">
+                  <div className="space-y-5">
                     <Label htmlFor="voice-input" className="text-white">Voice Command</Label>
                     <Textarea
                       id="voice-input"
@@ -489,12 +489,10 @@ export function ControlsPage() {
                   <div className="text-xs text-white/50 space-y-1">
                     <p>💡 Try commands like:</p>
                     <ul className="list-disc list-inside ml-2 space-y-1">
-                      <li>"Turn on the fan" or "Fan on"</li>
-                      <li>"Turn off the light" or "Light off"</li>
-                      <li>"Set mood lighting" or "Mood on"</li>
-                      <li>"Emergency alert" or "Trigger buzzer"</li>
-                      <li>"Open servo" or "Close servo"</li>
-                      <li>"Open" (password access)</li>
+                      <li>&quot;Turn on the fan&quot; or &quot;Fan on&quot;</li>
+                      <li>&quot;Turn off the lights&quot; or &quot;Lights off&quot;</li>
+                      <li>&quot;Turn on Party Mode&quot; or &quot;Party on&quot;</li>
+                      <li>&quot;Emergency alert&quot; or &quot;Trigger buzzer&quot;</li>
                     </ul>
                   </div>
                 </CardContent>

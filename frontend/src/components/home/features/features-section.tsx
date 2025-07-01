@@ -1,4 +1,4 @@
-import { Mic, MessageSquare, Smartphone, Thermometer, Shield, Zap, Database } from 'lucide-react';
+import { Mic, Smartphone, Thermometer, Shield, Zap, Database } from 'lucide-react';
 
 export function FeaturesSection() {
   const features = [

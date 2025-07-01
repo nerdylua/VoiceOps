@@ -1,0 +1,49 @@
+#include <Stepper.h>
+#include <ESP32Servo.h>
+
+// Stepper Motor
+#define IN1 16
+#define IN2 17
+#define IN3 18
+#define IN4 19
+const int stepsPerRevolution = 2048;
+Stepper myStepper(stepsPerRevolution, IN1, IN3, IN2, IN4);
+
+// LEDs
+const int ledPins[4] = {12,13,14,15}; // Update if needed
+
+// Servo
+Servo myServo;
+const int servoPin = 26;
+
+// MQ2 Gas Sensor
+const int mq2Pin = 34; // Analog input pin for MQ2
+
+void setup() {
+  // Initialize LEDs
+  for (int i = 0; i < 4; i++) {
+    pinMode(ledPins[i], OUTPUT);
+    digitalWrite(ledPins[i], HIGH); // Turn all LEDs on
+  }
+
+  // Initialize Stepper
+  myStepper.setSpeed(5);
+
+  // Initialize Servo
+  myServo.attach(servoPin);
+
+  // Initialize Serial Monitor
+  Serial.begin(115200);
+}
+
+void loop() {
+  // Servo: Move to 90° and back
+  myStepper.step(stepsPerRevolution);
+  delay(1000);
+  myStepper.step(-stepsPerRevolution);
+  delay(1000);
+  myServo.write(60);
+  delay(1000);
+  myServo.write(-10);
+  delay(1000);
+}

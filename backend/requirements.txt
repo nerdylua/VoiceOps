@@ -18,11 +18,18 @@ google-cloud-speech==2.21.0
 openai==1.3.8
 google-generativeai==0.3.2
 
+# OpenAI Whisper for Speech-to-Text
+openai-whisper==20231117
+
+# Text-to-Speech
+pyttsx3==2.90
+
+# Audio Processing and Utilities
+pydub==0.25.1
+soundfile==0.12.1
+
 # Telegram Bot
 python-telegram-bot==20.7
-
-# Audio Processing
-pydub==0.25.1
 
 # Utilities
 python-dateutil==2.8.2
@@ -43,3 +50,10 @@ SQLAlchemy==2.0.23
 
 # Optional: Async support
 asyncio-mqtt==0.13.0 
+
+# Additional dependencies for voice processing
+numpy==1.24.3
+scipy==1.11.4
+
+# For better audio handling
+librosa==0.10.1 

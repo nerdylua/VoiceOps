@@ -13,7 +13,7 @@ export interface VoiceCommandResponse {
   actions?: Array<{
     device: string;
     command: string;
-    value?: any;
+    value?: unknown;
   }>;
   firebase_success?: boolean;
   timestamp?: string;
@@ -138,7 +138,7 @@ class AssistantService {
   async controlDevice(
     device: string,
     command: string,
-    value?: any
+    value?: unknown
   ): Promise<VoiceCommandResponse> {
     try {
       const response = await fetch(`${this.baseUrl}/api/devices/control`, {

@@ -153,7 +153,7 @@ export function DashboardPage() {
                 <div className="flex items-center justify-between py-3 border-b border-white/10 last:border-0">
                   <div className="flex items-center space-x-3">
                     <div className="w-2 h-2 bg-green-400 rounded-full"></div>
-                    <span className="text-sm text-white">Voice Command: "Turn on the fan"</span>
+                    <span className="text-sm text-white">Voice Command: &quot;Turn on the fan&quot;</span>
                   </div>
                   <span className="text-xs text-white/60">2 minutes ago</span>
                 </div>

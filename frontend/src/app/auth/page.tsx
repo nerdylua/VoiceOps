@@ -3,9 +3,9 @@
 import { AuthPage } from '@/components/auth/auth-page';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/contexts/auth-context';
-import { useEffect } from 'react';
+import { useEffect, Suspense } from 'react';
 
-export default function Auth() {
+function AuthContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectTo = searchParams.get('redirect') || '/dashboard';
@@ -45,4 +45,12 @@ export default function Auth() {
   }
 
   return <AuthPage onAuthSuccess={handleAuthSuccess} />;
+}
+
+export default function Auth() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>}>
+      <AuthContent />
+    </Suspense>
+  );
 } 

@@ -9,12 +9,19 @@ import firebase_admin
 from firebase_admin import credentials, db
 from datetime import datetime
 import pyttsx3
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+import threading
 
 # --- CONFIG ---
-GEMINI_API_KEY = "AIzaSyDrOTwbid-eW_PfoZkzAH_AJPJEwdu91HE"
+GEMINI_API_KEY = "AIzaSyAyGquNFvp1NyObrLohnm8pcIryAS4_bTY"
 FIREBASE_DB_URL = "https://iot-el-1842a-default-rtdb.asia-southeast1.firebasedatabase.app/"
 FIREBASE_CRED_FILE = "firebase_key.json"
-PASSWORD = "open"
+
+
+# --- FLASK SETUP ---
+app = Flask(__name__)
+CORS(app, origins=["http://localhost:3000", "http://127.0.0.1:3000"])
 
 # --- FIREBASE INIT ---
 try:
@@ -44,7 +51,7 @@ def send_firebase_command(device: str, command: str, value=None):
     try:
         timestamp = datetime.now().isoformat()
         
-        if device in ["light", "fan"]:
+        if device in ["lights", "fan", "party"]:
             # Send device control commands
             db.reference(f"/commands/{device}").set(command)
             print(f"🔥 Firebase: {device} -> {command}")
@@ -76,7 +83,7 @@ def gemini_friendly_response(user_input: str) -> str:
     Use Gemini to generate a friendly, expressive reply to the user.
     """
     try:
-        model = genai.GenerativeModel('gemini-pro')
+        model = genai.GenerativeModel('gemini-1.5-flash')
         
         prompt = f"""You're a cheerful, friendly home assistant. Be expressive, human-like, and playful, but keep it short and clear.
 
@@ -96,11 +103,11 @@ def gemini_map_command(command: str) -> dict:
 You are a smart home assistant. Interpret the user's voice command and convert it into a JSON response in this format:
 
 {{
-  "intent": "device_control" | "sensor_query" | "emergency" | "password_access" | "general_chat" | "unknown",
+  "intent": "device_control" | "sensor_query" | "emergency" | "general_chat" | "unknown",
   "response": "natural reply to user",
   "actions": [
     {{
-      "device": "fan" | "light" | "buzzer",
+      "device": "fan" | "lights" | "buzzer" | "party",
       "command": "on" | "off" | "trigger",
       "value": true | false | duration in ms (for buzzer)
     }}
@@ -108,7 +115,6 @@ You are a smart home assistant. Interpret the user's voice command and convert i
 }}
 
 Special commands:
-- If user says "open" (password), respond with password_access intent
 - For device control, use "on"/"off" commands (not "turn_on"/"turn_off")
 - For emergency/alert, trigger buzzer
 - For casual conversation, use general_chat intent
@@ -118,7 +124,7 @@ Respond only with valid JSON and nothing else.
 """
 
     try:
-        model = genai.GenerativeModel('gemini-pro')
+        model = genai.GenerativeModel('gemini-1.5-flash')
         response = model.generate_content(prompt)
         raw_text = response.text.strip()
 
@@ -218,30 +224,10 @@ def execute_actions(actions: list) -> bool:
     
     return success
 
-def handle_password_access():
-    """Handle password access - turn on all devices"""
-    print("🔐 Password access granted!")
-    
-    # Turn on both light and fan
-    send_firebase_command("light", "on")
-    send_firebase_command("fan", "on")
-    
-    return "Welcome! Turning on all devices for you."
+
 
 def parse_command(command: str) -> dict:
     """Enhanced command parsing with Firebase integration"""
-    cmd = command.lower()
-    
-    # Check for password first
-    if PASSWORD in cmd:
-        response = handle_password_access()
-        return {
-            "intent": "password_access", 
-            "response": response, 
-            "actions": [],
-            "firebase_success": True
-        }
-    
     # Use Gemini for intelligent parsing
     result = gemini_map_command(command)
     
@@ -258,34 +244,231 @@ def parse_command(command: str) -> dict:
     result["firebase_success"] = firebase_success
     return result
 
-def main():
-    print("🔊 VoiceOps Assistant with Firebase Started (Ctrl+C to stop)")
-    print(f"🔥 Connected to Firebase: {FIREBASE_DB_URL}")
-    print(f"🔑 Password: '{PASSWORD}' to unlock all devices")
+def process_text_command(text_command: str):
+    """Process a text command and return results"""
+    if not text_command.strip():
+        return None
     
-    try:
-        while True:
-            audio_file = record_audio(duration=3)
-            text = transcribe_audio(audio_file)
+    print(f"\n📝 Processing text command: {text_command}")
+    result = parse_command(text_command)
+    
+    print(f"🧠 Intent: {result['intent']}")
+    print(f"💬 Response: {result['response']}")
+    print(f"⚙️ Actions: {result.get('actions', [])}")
+    
+    if result.get('firebase_success'):
+        print("✅ Firebase commands executed successfully")
+    else:
+        print("❌ Some Firebase commands failed")
+    
+    # Speak the response
+    speak(result['response'])
+    return result
 
-            if text:
-                result = parse_command(text)
-                print(f"🧠 Intent: {result['intent']}")
-                print(f"💬 Response: {result['response']}")
-                print(f"⚙️ Actions: {result.get('actions', [])}")
-                
-                if result.get('firebase_success'):
-                    print("✅ Firebase commands executed successfully")
-                else:
-                    print("❌ Some Firebase commands failed")
-                print()
-            else:
-                print("🤷 No command detected. Try again.\n")
-            
-            time.sleep(0.5)
+def process_voice_command(duration=3):
+    """Process a voice command and return results"""
+    print(f"\n🎙️ Recording for {duration} seconds...")
+    audio_file = record_audio(duration=duration)
+    text = transcribe_audio(audio_file)
     
-    except KeyboardInterrupt:
-        print("\n👋 Exiting VoiceOps Assistant.")
+    if text:
+        return process_text_command(text)
+    else:
+        print("🤷 No command detected. Try again.")
+        return None
+
+def main():
+    print("🔊 VoiceOps Assistant with Firebase")
+    print(f"🔥 Connected to Firebase: {FIREBASE_DB_URL}")
+    print("\n" + "="*60)
+    print("📋 Try commands like:")
+    print("  • 'Turn on the fan' or 'Fan on'")
+    print("  • 'Turn off the lights' or 'Lights off'")
+    print("  • 'Turn on party mode' or 'Party on'")
+    print("  • 'Emergency alert' or 'Trigger buzzer'")
+    print("="*60)
+    
+    # Check command line arguments
+    import sys
+    
+    if len(sys.argv) > 1 and sys.argv[1] == '--api':
+        print("\n🌐 Starting API Server Mode (for frontend)")
+        print("🚀 Server running on http://127.0.0.1:5001")
+        print("🌍 Frontend can now connect to the assistant!")
+        print("📝 API Endpoints available:")
+        print("  • GET  /health - Health check")
+        print("  • POST /api/voice/process - Process text commands")
+        print("  • POST /api/voice/listen - Voice listening")
+        print("  • POST /api/devices/control - Direct device control")
+        print("\nPress Ctrl+C to stop the server")
+        
+        try:
+            app.run(host='127.0.0.1', port=5001, debug=False)
+        except KeyboardInterrupt:
+            print("\n👋 API Server stopped.")
+    else:
+        print("\n🎯 CLI Mode - Interactive Voice Assistant")
+        print("💡 Tip: Run with '--api' flag to start web server for frontend")
+        
+        try:
+            while True:
+                print("\n🎯 Choose input method:")
+                print("1. Type 'text' for text command")
+                print("2. Type 'voice' for voice command")
+                print("3. Type 'quit' to exit")
+                print("4. Or directly type a command")
+                
+                user_input = input("\n💭 Your choice/command: ").strip()
+                
+                if user_input.lower() in ['quit', 'exit', 'q']:
+                    print("\n👋 Exiting VoiceOps Assistant.")
+                    break
+                elif user_input.lower() in ['voice', 'v']:
+                    print("\nPrepare to speak your command...")
+                    time.sleep(1)
+                    process_voice_command(duration=3)
+                elif user_input.lower() in ['text', 't']:
+                    text_command = input("\n📝 Enter your command: ").strip()
+                    if text_command:
+                        process_text_command(text_command)
+                elif user_input:
+                    # Direct command input
+                    process_text_command(user_input)
+                else:
+                    print("⚠️ Please enter a valid option or command.")
+                
+                time.sleep(0.5)
+        
+        except KeyboardInterrupt:
+            print("\n👋 Exiting VoiceOps Assistant.")
+        except Exception as e:
+            print(f"\n❌ Error: {e}")
+
+# --- FLASK API ENDPOINTS ---
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Health check endpoint for the frontend"""
+    whisper_status = model is not None
+    firebase_status = True  # Already initialized
+    tts_status = True  # Already initialized
+    
+    return jsonify({
+        'status': 'healthy',
+        'service': 'VoiceOps Assistant API',
+        'timestamp': datetime.now().isoformat(),
+        'firebase_connected': firebase_status,
+        'whisper_loaded': whisper_status,
+        'tts_available': tts_status
+    })
+
+@app.route('/api/voice/process', methods=['POST'])
+def api_process_text_command():
+    """Process text command via API"""
+    try:
+        data = request.get_json()
+        if not data or 'command' not in data:
+            return jsonify({'success': False, 'error': 'Command is required'}), 400
+        
+        command = data['command'].strip()
+        speak_response = data.get('speak_response', False)
+        
+        if not command:
+            return jsonify({'success': False, 'error': 'Command cannot be empty'}), 400
+        
+        # Process the command
+        result = parse_command(command)
+        
+        # Speak response if requested
+        if speak_response and result.get('response'):
+            speak(result['response'])
+        
+        return jsonify({
+            'success': True,
+            'command': command,
+            'intent': result.get('intent'),
+            'response': result.get('response'),
+            'actions': result.get('actions', []),
+            'firebase_success': result.get('firebase_success', False),
+            'timestamp': datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/voice/listen', methods=['POST'])
+def api_listen_voice_command():
+    """Listen for voice command via API"""
+    try:
+        data = request.get_json() or {}
+        duration = data.get('duration', 3)
+        speak_response = data.get('speak_response', False)
+        
+        # Ensure duration is within bounds
+        duration = max(1, min(duration, 10))
+        
+        # Record and transcribe
+        audio_file = record_audio(duration=duration)
+        text = transcribe_audio(audio_file)
+        
+        if not text:
+            return jsonify({
+                'success': False,
+                'error': 'No speech detected',
+                'timestamp': datetime.now().isoformat()
+            })
+        
+        # Process the command
+        result = parse_command(text)
+        
+        # Speak response if requested
+        if speak_response and result.get('response'):
+            speak(result['response'])
+        
+        return jsonify({
+            'success': True,
+            'command': text,
+            'intent': result.get('intent'),
+            'response': result.get('response'),
+            'actions': result.get('actions', []),
+            'firebase_success': result.get('firebase_success', False),
+            'timestamp': datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/devices/control', methods=['POST'])
+def api_control_device():
+    """Direct device control via API"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'Request data required'}), 400
+        
+        device = data.get('device')
+        command = data.get('command')
+        value = data.get('value')
+        
+        if not device or not command:
+            return jsonify({'success': False, 'error': 'Device and command are required'}), 400
+        
+        # Send Firebase command
+        success = send_firebase_command(device, command, value)
+        
+        return jsonify({
+            'success': success,
+            'device': device,
+            'command': command,
+            'value': value,
+            'timestamp': datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+def run_flask_server():
+    """Run Flask server in a separate thread"""
+    app.run(host='127.0.0.1', port=5001, debug=False, use_reloader=False)
 
 if __name__ == "__main__":
     main()

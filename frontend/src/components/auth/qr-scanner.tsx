@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
-import { Camera, CheckCircle, AlertCircle, Shield } from 'lucide-react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { CheckCircle, AlertCircle, Shield } from 'lucide-react';
 
 interface QRScannerProps {
   onScanSuccess: (data: string) => void;
@@ -10,7 +10,11 @@ interface QRScannerProps {
 
 declare global {
   interface Window {
-    Html5Qrcode: any;
+    Html5Qrcode: new (elementId: string) => {
+      start: (config: unknown, options: unknown, onSuccess: (decodedText: string, decodedResult: unknown) => void, onError: (error: string) => void) => Promise<void>;
+      stop: () => Promise<void>;
+      clear: () => void;
+    };
   }
 }
 
@@ -20,7 +24,11 @@ export function QRScanner({ onScanSuccess, onScanError }: QRScannerProps) {
   const [success, setSuccess] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [needsPermission, setNeedsPermission] = useState(false);
-  const html5QrcodeScannerRef = useRef<any>(null);
+  const html5QrcodeScannerRef = useRef<{
+    start: (config: unknown, options: unknown, onSuccess: (decodedText: string, decodedResult: unknown) => void, onError: (error: string) => void) => Promise<void>;
+    stop: () => Promise<void>;
+    clear: () => void;
+  } | null>(null);
   const elementId = 'qr-reader';
   const isInitializingRef = useRef(false);
 
@@ -33,6 +41,7 @@ export function QRScanner({ onScanSuccess, onScanError }: QRScannerProps) {
     return () => {
       cleanup();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const cleanup = async () => {
@@ -44,7 +53,7 @@ export function QRScanner({ onScanSuccess, onScanError }: QRScannerProps) {
       }
       
       // Stop all active video tracks
-      const tracks = await navigator.mediaDevices.enumerateDevices()
+      await navigator.mediaDevices.enumerateDevices()
         .then(() => {
           // Get all video elements that might have active streams
           const videoElements = document.querySelectorAll('video');
@@ -57,41 +66,13 @@ export function QRScanner({ onScanSuccess, onScanError }: QRScannerProps) {
         })
         .catch(() => {});
         
-    } catch (e) {
+    } catch {
       // Silent cleanup
     }
     
     html5QrcodeScannerRef.current = null;
     setIsScanning(false);
     isInitializingRef.current = false;
-  };
-
-  const initializeScanner = async () => {
-    if (isInitializingRef.current) return;
-    isInitializingRef.current = true;
-
-    try {
-      // Clear any existing scanner first
-      await cleanup();
-      
-      if (!window.Html5Qrcode) {
-        const script = document.createElement('script');
-        script.src = '/html5-qrcode.min.js';
-        
-        await new Promise<void>((resolve, reject) => {
-          script.onload = () => resolve();
-          script.onerror = () => reject(new Error('Failed to load library'));
-          document.head.appendChild(script);
-        });
-      }
-      
-      setIsLoading(false);
-      await requestPermissionAndStart();
-    } catch (err) {
-      setError('Failed to initialize scanner');
-      setIsLoading(false);
-      isInitializingRef.current = false;
-    }
   };
 
   const requestPermissionAndStart = async () => {
@@ -112,11 +93,12 @@ export function QRScanner({ onScanSuccess, onScanError }: QRScannerProps) {
       // Permission granted, start scanner
       startScanner();
       
-    } catch (err: any) {
-      if (err.name === 'NotAllowedError') {
+    } catch (err: unknown) {
+      const error = err as { name?: string };
+      if (error.name === 'NotAllowedError') {
         setNeedsPermission(true);
         setError('Camera permission is required to scan QR codes');
-      } else if (err.name === 'NotFoundError') {
+      } else if (error.name === 'NotFoundError') {
         setError('No camera found on this device');
       } else {
         setError('Failed to access camera');
@@ -125,6 +107,35 @@ export function QRScanner({ onScanSuccess, onScanError }: QRScannerProps) {
       isInitializingRef.current = false;
     }
   };
+
+  const initializeScanner = useCallback(async () => {
+    if (isInitializingRef.current) return;
+    isInitializingRef.current = true;
+
+    try {
+      // Clear any existing scanner first
+      await cleanup();
+      
+      if (!window.Html5Qrcode) {
+        const script = document.createElement('script');
+        script.src = '/html5-qrcode.min.js';
+        
+        await new Promise<void>((resolve, reject) => {
+          script.onload = () => resolve();
+          script.onerror = () => reject(new Error('Failed to load library'));
+          document.head.appendChild(script);
+        });
+      }
+      
+      setIsLoading(false);
+      await requestPermissionAndStart();
+    } catch {
+      setError('Failed to initialize scanner');
+      setIsLoading(false);
+      isInitializingRef.current = false;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const startScanner = async () => {
     if (isScanning || !window.Html5Qrcode || html5QrcodeScannerRef.current) return;
@@ -157,7 +168,7 @@ export function QRScanner({ onScanSuccess, onScanError }: QRScannerProps) {
       setIsScanning(true);
       isInitializingRef.current = false;
       
-    } catch (err: any) {
+    } catch {
       setError('Unable to start camera');
       setIsScanning(false);
       html5QrcodeScannerRef.current = null;
@@ -166,7 +177,7 @@ export function QRScanner({ onScanSuccess, onScanError }: QRScannerProps) {
     }
   };
 
-  const handleScanSuccess = async (decodedText: string, decodedResult: any) => {
+  const handleScanSuccess = async (decodedText: string) => {
     if (decodedText === 'http://en.m.wikipedia.org') {
       setSuccess(true);
       setIsScanning(false);
@@ -207,7 +218,7 @@ export function QRScanner({ onScanSuccess, onScanError }: QRScannerProps) {
           })
           .catch(() => {}); // Silent if no permission
           
-      } catch (e) {
+      } catch {
         // Silent cleanup
       }
       
@@ -219,7 +230,7 @@ export function QRScanner({ onScanSuccess, onScanError }: QRScannerProps) {
     }
   };
 
-  const handleScanError = (error: string) => {
+  const handleScanError = () => {
     // Silent - don't show scan errors
   };
 
@@ -234,7 +245,7 @@ export function QRScanner({ onScanSuccess, onScanError }: QRScannerProps) {
       <div className="flex flex-col items-center justify-center min-h-[400px] p-6">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
         <p className="text-gray-600">Initializing scanner...</p>
-      </div>
+        </div>
     );
   }
 
@@ -265,12 +276,12 @@ export function QRScanner({ onScanSuccess, onScanError }: QRScannerProps) {
           style={{ minHeight: '300px' }}
         />
       </div>
-
+      
       {success && (
         <div className="w-full bg-green-50 border border-green-200 rounded-lg p-4 mt-4">
           <div className="flex items-center space-x-2 text-green-800">
             <CheckCircle className="w-5 h-5" />
-            <div>
+      <div>
               <h3 className="font-semibold">Authentication Successful!</h3>
               <p className="text-sm">Redirecting...</p>
             </div>
@@ -285,9 +296,9 @@ export function QRScanner({ onScanSuccess, onScanError }: QRScannerProps) {
             <div>
               <h3 className="font-semibold">Error</h3>
               <p className="text-sm">{error}</p>
-            </div>
-          </div>
         </div>
+      </div>
+      </div>
       )}
     </div>
   );

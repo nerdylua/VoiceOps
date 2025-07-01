@@ -41,8 +41,9 @@ export async function POST(request: NextRequest) {
           },
           devices: ['servo', 'lights']
         });
-      } catch (firebaseError) {
+      } catch (firebaseError: unknown) {
         // Auth was successful but device control failed
+        console.error('Firebase error:', firebaseError);
         return NextResponse.json({
           success: true,
           message: 'Authentication successful!',
