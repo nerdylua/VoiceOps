@@ -31,8 +31,11 @@ function AuthContent() {
       // Use auth context to login
       login(mockUser, mockToken);
       
-      // Redirect to dashboard immediately
-      router.push(redirectTo);
+      // Small delay to ensure cookies are set before navigation
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Force full page reload to ensure server sees new cookies
+      window.location.href = redirectTo;
       
     } catch (error) {
       alert(error instanceof Error ? error.message : 'Authentication failed. Please try again.');
