@@ -182,7 +182,7 @@ export function ControlsPage() {
     setLastResponse(null);
     
     try {
-      const response = await assistantService.listenForVoiceCommand(listenDuration, false);
+      const response = await assistantService.listenForVoiceCommand(listenDuration, true);
       setLastResponse(response);
       
       if (response.success && response.command) {

@@ -113,10 +113,10 @@ def gemini_friendly_response(user_input: str) -> str:
     try:
         model = genai.GenerativeModel('gemini-1.5-flash')
         
-        prompt = f"""You're a cheerful, friendly home assistant. Be expressive, human-like, and playful, but keep it short and clear.
+        prompt = f"""You're a cheerful, friendly home assistant. Be expressive, human-like, and playful, but keep it short and clear. Do not use any emojis in your response.
 
 User said: "{user_input}"
-Respond in a way that makes them smile 😄"""
+Respond in a way that makes them smile."""
 
         response = model.generate_content(prompt)
         return response.text.strip()
@@ -425,10 +425,9 @@ def api_process_text_command():
         if not command:
             return jsonify({'success': False, 'error': 'Command cannot be empty'}), 400
         result = parse_command(command)
-        # Speak response directly (not in a thread)
-        if speak_response and result.get('response'):
-            speak(result['response'])
-        return jsonify({
+        
+        # Prepare response first
+        response_data = {
             'success': True,
             'command': command,
             'intent': result.get('intent'),
@@ -436,7 +435,16 @@ def api_process_text_command():
             'actions': result.get('actions', []),
             'firebase_success': result.get('firebase_success', False),
             'timestamp': datetime.now().isoformat()
-        })
+        }
+        
+        # Start TTS in background if requested
+        if speak_response and result.get('response'):
+            def speak_async():
+                initialize_tts()
+                speak(result['response'])
+            threading.Thread(target=speak_async, daemon=True).start()
+        
+        return jsonify(response_data)
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -461,10 +469,9 @@ def api_listen_voice_command():
                 'timestamp': datetime.now().isoformat()
             })
         result = parse_command(text)
-        # Speak response directly (not in a thread)
-        if speak_response and result.get('response'):
-            speak(result['response'])
-        return jsonify({
+        
+        # Prepare response first
+        response_data = {
             'success': True,
             'command': text,
             'intent': result.get('intent'),
@@ -472,7 +479,16 @@ def api_listen_voice_command():
             'actions': result.get('actions', []),
             'firebase_success': result.get('firebase_success', False),
             'timestamp': datetime.now().isoformat()
-        })
+        }
+        
+        # Start TTS in background if requested
+        if speak_response and result.get('response'):
+            def speak_async():
+                initialize_tts()
+                speak(result['response'])
+            threading.Thread(target=speak_async, daemon=True).start()
+        
+        return jsonify(response_data)
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
