@@ -1,0 +1,45 @@
+# Flask and Web Framework
+Flask==3.0.0
+Flask-CORS==4.0.0
+
+# Firebase
+firebase-admin==6.4.0
+
+# HTTP Requests
+requests==2.31.0
+
+# Environment Variables
+python-dotenv==1.0.0
+
+# Voice Processing and AI
+SpeechRecognition==3.10.0
+pyaudio==0.2.11
+google-cloud-speech==2.21.0
+openai==1.3.8
+google-generativeai==0.3.2
+
+# Telegram Bot
+python-telegram-bot==20.7
+
+# Audio Processing
+pydub==0.25.1
+
+# Utilities
+python-dateutil==2.8.2
+
+# Development and Testing
+pytest==7.4.3
+pytest-flask==1.3.0
+
+# Logging
+colorlog==6.8.0
+
+# Security
+cryptography==41.0.8
+PyJWT==2.8.0
+
+# Optional: Database (if using SQLite for local storage)
+SQLAlchemy==2.0.23
+
+# Optional: Async support
+asyncio-mqtt==0.13.0 

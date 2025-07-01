@@ -1,0 +1,143 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# === FRONTEND (Next.js) ===
+# dependencies
+frontend/node_modules/
+frontend/.pnp
+frontend/.pnp.js
+frontend/.yarn/install-state.gz
+
+# testing
+frontend/coverage
+
+# next.js
+frontend/.next/
+frontend/out/
+
+# production
+frontend/build
+
+# misc
+.DS_Store
+*.pem
+.idea
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# local env files
+.env*.local
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# === BACKEND (Python/Flask) ===
+# Python
+backend/__pycache__/
+backend/*.py[cod]
+backend/*$py.class
+backend/*.so
+backend/.Python
+backend/build/
+backend/develop-eggs/
+backend/dist/
+backend/downloads/
+backend/eggs/
+backend/.eggs/
+backend/lib/
+backend/lib64/
+backend/parts/
+backend/sdist/
+backend/var/
+backend/wheels/
+backend/share/python-wheels/
+backend/*.egg-info/
+backend/.installed.cfg
+backend/*.egg
+backend/MANIFEST
+
+# PyInstaller
+backend/*.manifest
+backend/*.spec
+
+# Installer logs
+backend/pip-log.txt
+backend/pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+backend/htmlcov/
+backend/.tox/
+backend/.nox/
+backend/.coverage
+backend/.coverage.*
+backend/.cache
+backend/nosetests.xml
+backend/coverage.xml
+backend/*.cover
+backend/*.py,cover
+backend/.hypothesis/
+backend/.pytest_cache/
+backend/cover/
+
+# Environments
+backend/.env
+backend/.venv
+backend/env/
+backend/venv/
+backend/ENV/
+backend/env.bak/
+backend/venv.bak/
+
+# PyCharm
+backend/.idea/
+
+# VS Code
+backend/.vscode/
+
+# === SENSITIVE FILES ===
+# Firebase credentials
+firebase_key.json
+backend/firebase_key.json
+**/firebase_key.json
+
+# Environment files with secrets
+*.env
+!*.env.example
+backend/test.env
+
+# Audio files (potentially large/temporary)
+backend/*.wav
+backend/*.mp3
+backend/*.mp4
+backend/*.aac
+
+# Logs
+*.log
+backend/*.log
+
+# === GENERAL ===
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary files
+*.tmp
+*.temp 
