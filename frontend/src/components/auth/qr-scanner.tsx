@@ -36,14 +36,31 @@ export function QRScanner({ onScanSuccess, onScanError }: QRScannerProps) {
   }, []);
 
   const cleanup = async () => {
-    if (html5QrcodeScannerRef.current && isScanning) {
-      try {
+    try {
+      // Stop the QR scanner first
+      if (html5QrcodeScannerRef.current) {
         await html5QrcodeScannerRef.current.stop();
         html5QrcodeScannerRef.current.clear();
-      } catch (e) {
-        // Silent cleanup
       }
+      
+      // Stop all active video tracks
+      const tracks = await navigator.mediaDevices.enumerateDevices()
+        .then(() => {
+          // Get all video elements that might have active streams
+          const videoElements = document.querySelectorAll('video');
+          videoElements.forEach(video => {
+            if (video.srcObject) {
+              const stream = video.srcObject as MediaStream;
+              stream.getTracks().forEach(track => track.stop());
+            }
+          });
+        })
+        .catch(() => {});
+        
+    } catch (e) {
+      // Silent cleanup
     }
+    
     html5QrcodeScannerRef.current = null;
     setIsScanning(false);
     isInitializingRef.current = false;
@@ -154,15 +171,47 @@ export function QRScanner({ onScanSuccess, onScanError }: QRScannerProps) {
       setSuccess(true);
       setIsScanning(false);
       
-      // Stop scanner immediately
-      if (html5QrcodeScannerRef.current) {
-        try {
+      // Immediately and forcefully stop all camera operations
+      try {
+        // Stop the scanner first
+        if (html5QrcodeScannerRef.current) {
           await html5QrcodeScannerRef.current.stop();
-        } catch (e) {
-          // Silent cleanup
+          html5QrcodeScannerRef.current.clear();
+          html5QrcodeScannerRef.current = null;
         }
+        
+        // Find and stop all video streams in the scanner element
+        const scannerElement = document.getElementById(elementId);
+        if (scannerElement) {
+          const videoElements = scannerElement.querySelectorAll('video');
+          videoElements.forEach(video => {
+            if (video.srcObject) {
+              const stream = video.srcObject as MediaStream;
+              stream.getTracks().forEach(track => {
+                track.stop();
+                track.enabled = false;
+              });
+              video.srcObject = null;
+            }
+            // Remove the video element
+            video.remove();
+          });
+          // Clear the scanner element completely
+          scannerElement.innerHTML = '';
+        }
+        
+        // Stop any remaining global video tracks
+        navigator.mediaDevices.getUserMedia({ video: true })
+          .then(stream => {
+            stream.getTracks().forEach(track => track.stop());
+          })
+          .catch(() => {}); // Silent if no permission
+          
+      } catch (e) {
+        // Silent cleanup
       }
       
+      // Call success callback
       onScanSuccess(decodedText);
     } else {
       setError('Invalid QR code');
@@ -218,7 +267,7 @@ export function QRScanner({ onScanSuccess, onScanError }: QRScannerProps) {
       </div>
 
       {success && (
-        <div className="w-full bg-green-50 border border-green-200 rounded-lg p-4">
+        <div className="w-full bg-green-50 border border-green-200 rounded-lg p-4 mt-4">
           <div className="flex items-center space-x-2 text-green-800">
             <CheckCircle className="w-5 h-5" />
             <div>
@@ -230,7 +279,7 @@ export function QRScanner({ onScanSuccess, onScanError }: QRScannerProps) {
       )}
 
       {error && (
-        <div className="w-full bg-red-50 border border-red-200 rounded-lg p-4">
+        <div className="w-full bg-red-50 border border-red-200 rounded-lg p-4 mt-4">
           <div className="flex items-center space-x-2 text-red-800">
             <AlertCircle className="w-5 h-5 flex-shrink-0" />
             <div>

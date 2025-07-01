@@ -76,9 +76,9 @@ void loop() {
   Serial.println("Polling Firebase...");
 
   // LED control
-  if (Firebase.RTDB.getString(&fbdo, "/commands/light")) {
+  if (Firebase.RTDB.getString(&fbdo, "/commands/lights")) {
     String lightState = fbdo.stringData();
-    Serial.print("Light command: ");
+    Serial.print("Lights command: ");
     Serial.println(lightState);
     digitalWrite(LED_PIN, lightState == "on" ? HIGH : LOW);
   }

@@ -17,6 +17,7 @@ export function ControlsPage() {
   const { isAuthenticated, logout } = useAuth();
   const [fanStatus, setFanStatus] = useState(false);
   const [lightStatus, setLightStatus] = useState(false);
+  const [partyStatus, setPartyStatus] = useState(false);
   const [voiceCommand, setVoiceCommand] = useState('');
   const [isListening, setIsListening] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -24,10 +25,52 @@ export function ControlsPage() {
   const [assistantStatus, setAssistantStatus] = useState<'checking' | 'available' | 'unavailable'>('checking');
   const [listenDuration, setListenDuration] = useState(3);
 
+  const firebaseUrl = 'https://iot-el-1842a-default-rtdb.asia-southeast1.firebasedatabase.app';
+
   // Check assistant service status on component mount
   useEffect(() => {
     checkAssistantStatus();
+    loadDeviceStates();
   }, []);
+
+  const loadDeviceStates = async () => {
+    try {
+      // Fetch current device states from Firebase
+      const responses = await Promise.all([
+        fetch(`${firebaseUrl}/commands/fan.json`),
+        fetch(`${firebaseUrl}/commands/lights.json`),
+        fetch(`${firebaseUrl}/commands/party.json`)
+      ]);
+
+      const [fanData, lightsData, partyData] = await Promise.all(
+        responses.map(response => response.json())
+      );
+
+      setFanStatus(fanData === 'on');
+      setLightStatus(lightsData === 'on');
+      setPartyStatus(partyData === 'on');
+    } catch (error) {
+      console.error('Failed to load device states:', error);
+    }
+  };
+
+  const updateFirebaseDevice = async (device: string, state: 'on' | 'off') => {
+    try {
+      const response = await fetch(`${firebaseUrl}/commands/${device}.json`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(state)
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to update ${device}`);
+      }
+      return true;
+    } catch (error) {
+      console.error(`Failed to control ${device}:`, error);
+      return false;
+    }
+  };
 
   const checkAssistantStatus = async () => {
     setAssistantStatus('checking');
@@ -43,10 +86,9 @@ export function ControlsPage() {
   const handleFanToggle = async () => {
     const newStatus = !fanStatus;
     setFanStatus(newStatus);
-    try {
-      await assistantService.controlDevice('fan', newStatus ? 'on' : 'off');
-    } catch (error) {
-      console.error('Failed to control fan:', error);
+    
+    const success = await updateFirebaseDevice('fan', newStatus ? 'on' : 'off');
+    if (!success) {
       // Revert on error
       setFanStatus(!newStatus);
     }
@@ -55,18 +97,28 @@ export function ControlsPage() {
   const handleLightToggle = async () => {
     const newStatus = !lightStatus;
     setLightStatus(newStatus);
-    try {
-      await assistantService.controlDevice('light', newStatus ? 'on' : 'off');
-    } catch (error) {
-      console.error('Failed to control light:', error);
+    
+    const success = await updateFirebaseDevice('lights', newStatus ? 'on' : 'off');
+    if (!success) {
       // Revert on error
       setLightStatus(!newStatus);
     }
   };
 
+  const handlePartyToggle = async () => {
+    const newStatus = !partyStatus;
+    setPartyStatus(newStatus);
+    
+    const success = await updateFirebaseDevice('party', newStatus ? 'on' : 'off');
+    if (!success) {
+      // Revert on error
+      setPartyStatus(!newStatus);
+    }
+  };
+
   const handleEmergencyAlert = async () => {
-    try {
-      await assistantService.controlDevice('buzzer', 'on');
+    const success = await updateFirebaseDevice('buzzer', 'on');
+    if (success) {
       setLastResponse({
         success: true,
         command: 'Emergency Alert',
@@ -74,8 +126,12 @@ export function ControlsPage() {
         response: 'Emergency buzzer triggered for 10 seconds!',
         actions: [{ device: 'buzzer', command: 'on' }]
       });
-    } catch (error) {
-      console.error('Failed to trigger emergency alert:', error);
+
+      // Automatically turn off buzzer after 10 seconds
+      setTimeout(async () => {
+        await updateFirebaseDevice('buzzer', 'off');
+      }, 10000);
+    } else {
       setLastResponse({
         success: false,
         error: 'Failed to trigger emergency alert'
@@ -98,8 +154,9 @@ export function ControlsPage() {
             setFanStatus(action.command === 'on');
           } else if (action.device === 'light') {
             setLightStatus(action.command === 'on');
+          } else if (action.device === 'party') {
+            setPartyStatus(action.command === 'on');
           }
-          // Note: mood, servo, and buzzer don't have UI toggles but commands are still processed
         });
       }
       
@@ -137,8 +194,9 @@ export function ControlsPage() {
             setFanStatus(action.command === 'on');
           } else if (action.device === 'light') {
             setLightStatus(action.command === 'on');
+          } else if (action.device === 'party') {
+            setPartyStatus(action.command === 'on');
           }
-          // Note: mood, servo, and buzzer don't have UI toggles but commands are still processed
         });
       }
     } catch (error) {
@@ -233,7 +291,7 @@ export function ControlsPage() {
                       </div>
                       <div>
                         <Label htmlFor="fan-switch" className="text-white font-medium">Workspace Fan</Label>
-                        <p className="text-xs text-white/60">5V Mini Fan via Relay</p>
+                        <p className="text-xs text-white/60">5V Mini Fan via Stepper Motor</p>
                       </div>
                     </div>
                     <Switch
@@ -250,7 +308,7 @@ export function ControlsPage() {
                         <Lightbulb className="h-5 w-5 text-yellow-300" />
                       </div>
                       <div>
-                        <Label htmlFor="light-switch" className="text-white font-medium">Workspace Light</Label>
+                        <Label htmlFor="light-switch" className="text-white font-medium">Workspace Lights</Label>
                         <p className="text-xs text-white/60">LED Status Indicator</p>
                       </div>
                     </div>
@@ -258,6 +316,24 @@ export function ControlsPage() {
                       id="light-switch"
                       checked={lightStatus}
                       onCheckedChange={handleLightToggle}
+                    />
+                  </div>
+
+                  {/* Party light */}
+                  <div className="flex items-center justify-between p-4 bg-white/5 rounded-xl border border-white/10">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-purple-500/20 rounded-lg">
+                        <Lightbulb className="h-5 w-5 text-purple-300" />
+                      </div>
+                      <div>
+                        <Label htmlFor="party-switch" className="text-white font-medium">Party Light</Label>
+                        <p className="text-xs text-white/60">Party mode Indicator</p>
+                      </div>
+                    </div>
+                    <Switch
+                      id="party-switch"
+                      checked={partyStatus}
+                      onCheckedChange={handlePartyToggle}
                     />
                   </div>
 

@@ -25,7 +25,18 @@ export function AuthPage({ onAuthSuccess }: AuthPageProps) {
     try {
       // Check if the QR data is the expected string
       if (qrData === 'http://en.m.wikipedia.org') {
-        // Authentication successful
+        // Make door API call in background (don't wait for it)
+        fetch('/api/auth', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ qrData }),
+        }).catch(() => {
+          // Silent - door control failure shouldn't affect auth flow
+        });
+
+        // Authentication successful - continue immediately
         setAuthenticatedUser('Mr. Raghavendra');
         setShowSuccessModal(true);
         setQrDataStored(qrData);

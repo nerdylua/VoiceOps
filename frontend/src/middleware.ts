@@ -3,6 +3,17 @@ import { NextRequest, NextResponse } from 'next/server';
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   
+  // Check for authentication status
+  const authCookie = request.cookies.get('voiceops_auth');
+  const userCookie = request.cookies.get('voiceops_user');
+  const isAuthenticated = authCookie?.value === 'true';
+  const hasUser = userCookie?.value;
+  
+  // If user is already authenticated and tries to access auth page, redirect to dashboard
+  if (pathname === '/auth' && isAuthenticated && hasUser) {
+    return NextResponse.redirect(new URL('/dashboard', request.url));
+  }
+  
   // Public routes that don't require authentication
   const publicRoutes = ['/', '/auth'];
   
@@ -24,13 +35,6 @@ export function middleware(request: NextRequest) {
   
   // Check if accessing protected routes
   if (protectedRoutes.some(route => pathname.startsWith(route)) || pathname.startsWith('/api/')) {
-    // Check for authentication cookie
-    const authCookie = request.cookies.get('voiceops_auth');
-    const userCookie = request.cookies.get('voiceops_user');
-    
-    const isAuthenticated = authCookie?.value === 'true';
-    const hasUser = userCookie?.value;
-    
     if (!isAuthenticated || !hasUser) {
       // If it's an API call, return 401
       if (pathname.startsWith('/api/')) {
