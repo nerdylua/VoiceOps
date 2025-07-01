@@ -29,7 +29,6 @@ VoiceOps is a modern, voice-enabled AI assistant designed for workspace and offi
 - Python 3.8+
 - Node.js 18+
 - Firebase project (for Realtime Database)
-- (Optional) Telegram Bot Token
 
 ### Backend Setup
 1. **Clone the repository:**
