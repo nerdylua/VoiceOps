@@ -1,6 +1,6 @@
 import pyaudio
 import wave
-import whisper
+import speech_recognition as sr
 import time
 import os
 import json
@@ -22,13 +22,14 @@ FIREBASE_CRED_FILE = "firebase_key.json"
 PASSWORD = "open"
 
 # Flask app for API mode
-app = Flask(_name_)
+app = Flask(__name__)
 CORS(app, origins=["http://localhost:3000", "http://127.0.0.1:3000"])
 
 # Global variables
 is_firebase_initialized = False
 tts_engine = None
-whisper_model = None
+speech_recognizer = None
+microphone = None
 
 # --- FIREBASE INIT ---
 def initialize_firebase():
@@ -67,6 +68,31 @@ def speak(text: str):
     except Exception as e:
         print(f"❌ TTS failed: {e}")
 
+# --- SPEECH RECOGNITION INIT ---
+def initialize_speech_recognition():
+    global speech_recognizer, microphone
+    if speech_recognizer is None:
+        try:
+            speech_recognizer = sr.Recognizer()
+            microphone = sr.Microphone()
+            
+            # Adjust for ambient noise
+            print("🎙️ Calibrating microphone for ambient noise...")
+            with microphone as source:
+                speech_recognizer.adjust_for_ambient_noise(source, duration=1)
+            
+            # Configure recognizer settings
+            speech_recognizer.energy_threshold = 300
+            speech_recognizer.dynamic_energy_threshold = True
+            speech_recognizer.pause_threshold = 0.8
+            speech_recognizer.phrase_threshold = 0.3
+            
+            print("✅ Speech recognition initialized successfully")
+        except Exception as e:
+            print(f"❌ Speech recognition initialization failed: {e}")
+            speech_recognizer = None
+            microphone = None
+
 # Initialize Gemini
 genai.configure(api_key=GEMINI_API_KEY)
 
@@ -78,7 +104,7 @@ def send_firebase_command(device: str, command: str, value=None):
             
         timestamp = datetime.now().isoformat()
         
-        if device in ["light", "fan"]:
+        if device in ["light", "fan", "mood", "servo"]:
             # Send device control commands
             db.reference(f"/commands/{device}").set(command)
             print(f"🔥 Firebase: {device} -> {command}")
@@ -134,16 +160,32 @@ You are a smart home assistant. Interpret the user's voice command and convert i
   "response": "natural reply to user",
   "actions": [
     {{
-      "device": "fan" | "light" | "buzzer",
-      "command": "on" | "off" | "trigger",
-      "value": true | false | duration in ms (for buzzer)
+      "device": "fan" | "light" | "buzzer" | "mood" | "servo",
+      "command": "on" | "off" | "trigger" | "0" | "90" | "180",
+      "value": true | false | duration in ms (for buzzer) | angle (for servo)
     }}
   ]
 }}
 
+Device Commands:
+- fan: "on" | "off" - Control ceiling fan
+- light: "on" | "off" - Control room lighting
+- mood: "on" | "off" - Control mood lighting/ambient lights
+- servo: "0" | "90" | "180" - Set servo motor position (angles)
+- buzzer: "trigger" with duration in ms - Sound alarm/notification
+
+Examples:
+- "turn on the lights" -> light: "on"
+- "start the fan" -> fan: "on"  
+- "set mood lighting" -> mood: "on"
+- "rotate servo to 90 degrees" -> servo: "90"
+- "sound alarm for 5 seconds" -> buzzer: "trigger" with value: 5000
+- "open" (password) -> password_access intent, turn on light and fan
+
 Special commands:
 - If user says "open" (password), respond with password_access intent
 - For device control, use "on"/"off" commands (not "turn_on"/"turn_off")
+- For servo, use angle values: "0", "90", "180"
 - For emergency/alert, trigger buzzer
 - For casual conversation, use general_chat intent
 
@@ -157,7 +199,10 @@ Respond only with valid JSON and nothing else.
         raw_text = response.text.strip()
 
         # 🔧 Remove Markdown code fences if present
-        if raw_text.startswith("") and raw_text.endswith(""):
+        if raw_text.startswith("```json") and raw_text.endswith("```"):
+            lines = raw_text.splitlines()
+            raw_text = "\n".join(line for line in lines if not line.startswith("```")).strip()
+        elif raw_text.startswith("```") and raw_text.endswith("```"):
             lines = raw_text.splitlines()
             raw_text = "\n".join(line for line in lines if not line.startswith("```")).strip()
 
@@ -173,28 +218,54 @@ Respond only with valid JSON and nothing else.
             "actions": []
         }
 
-# Load Whisper model lazily to avoid SSL issues on import
-def get_whisper_model():
-    """Load Whisper model with error handling"""
-    global whisper_model
-    if whisper_model is None:
+def listen_for_speech(duration=5):
+    """Listen for speech using speech_recognition library"""
+    try:
+        if not speech_recognizer or not microphone:
+            print("❌ Speech recognition not initialized")
+            return ""
+        
+        print(f"🎙️ Listening for {duration} seconds...")
+        
+        with microphone as source:
+            # Listen for audio with timeout
+            audio = speech_recognizer.listen(source, timeout=duration, phrase_time_limit=duration)
+        
+        print("🔄 Processing speech...")
+        
+        # Try Google Speech Recognition first (requires internet)
         try:
-            print("📥 Loading Whisper model...")
-            whisper_model = whisper.load_model("base")  # Change to "tiny" if needed
-            print("✅ Whisper model loaded successfully")
-        except Exception as e:
-            print(f"❌ Failed to load Whisper model: {e}")
-            print("🔄 Trying to load 'tiny' model instead...")
-            try:
-                whisper_model = whisper.load_model("tiny")
-                print("✅ Whisper 'tiny' model loaded successfully")
-            except Exception as e2:
-                print(f"❌ Failed to load any Whisper model: {e2}")
-                whisper_model = None
-    return whisper_model
+            text = speech_recognizer.recognize_google(audio)
+            print(f"📝 Google SR: {text}")
+            return text
+        except sr.UnknownValueError:
+            print("❓ Google SR could not understand audio")
+        except sr.RequestError as e:
+            print(f"❌ Google SR error: {e}")
+        
+        # Fallback to offline recognition (if available)
+        try:
+            text = speech_recognizer.recognize_sphinx(audio)
+            print(f"📝 Sphinx SR: {text}")
+            return text
+        except sr.UnknownValueError:
+            print("❓ Sphinx SR could not understand audio")
+        except sr.RequestError as e:
+            print(f"❌ Sphinx SR error: {e}")
+        except Exception:
+            print("❌ Sphinx not available")
+        
+        return ""
+        
+    except sr.WaitTimeoutError:
+        print("⏰ Listening timeout - no speech detected")
+        return ""
+    except Exception as e:
+        print(f"❌ Speech recognition failed: {e}")
+        return ""
 
-def record_audio(filename="live.wav", duration=3):
-    """Records audio from mic and saves as a WAV file."""
+def record_audio_file(filename="live.wav", duration=3):
+    """Records audio from mic and saves as a WAV file (backup method)."""
     try:
         chunk = 1024
         format = pyaudio.paInt16
@@ -222,19 +293,30 @@ def record_audio(filename="live.wav", duration=3):
         print(f"❌ Audio recording failed: {e}")
         return None
 
-def transcribe_audio(file_path="live.wav") -> str:
-    """Transcribes audio using Whisper."""
+def transcribe_audio_file(file_path="live.wav") -> str:
+    """Transcribe audio file using speech_recognition"""
     try:
-        print("🔁 Transcribing...")
-        model = get_whisper_model()
-        if model is None:
-            print("❌ No Whisper model available")
+        if not speech_recognizer:
+            print("❌ Speech recognizer not initialized")
             return ""
         
-        result = model.transcribe(file_path)
-        text = result["text"].strip()
-        print(f"📝 Transcribed: {text}")
-        return text
+        print("🔁 Transcribing audio file...")
+        
+        with sr.AudioFile(file_path) as source:
+            audio = speech_recognizer.record(source)
+        
+        # Try Google Speech Recognition
+        try:
+            text = speech_recognizer.recognize_google(audio)
+            print(f"📝 Transcribed: {text}")
+            return text
+        except sr.UnknownValueError:
+            print("❓ Could not understand audio")
+            return ""
+        except sr.RequestError as e:
+            print(f"❌ Speech recognition error: {e}")
+            return ""
+            
     except Exception as e:
         print(f"❌ Transcription failed: {e}")
         return ""
@@ -258,9 +340,10 @@ def handle_password_access():
     """Handle password access - turn on all devices"""
     print("🔐 Password access granted!")
     
-    # Turn on both light and fan
+    # Turn on light, fan, and mood lighting
     send_firebase_command("light", "on")
     send_firebase_command("fan", "on")
+    send_firebase_command("mood", "on")
     
     return "Welcome! Turning on all devices for you."
 
@@ -304,7 +387,7 @@ def health_check():
         'service': 'VoiceOps Assistant',
         'timestamp': datetime.now().isoformat(),
         'firebase_connected': is_firebase_initialized,
-        'whisper_loaded': whisper_model is not None,
+        'speech_recognition_ready': speech_recognizer is not None,
         'tts_available': tts_engine is not None
     })
 
@@ -313,28 +396,28 @@ def listen_voice_command():
     """Listen for voice command with configurable duration"""
     try:
         data = request.get_json() or {}
-        duration = data.get('duration', 3)  # Default 3 seconds
+        duration = data.get('duration', 5)  # Default 5 seconds
         speak_response = data.get('speak_response', False)
+        use_file_method = data.get('use_file_method', False)  # Fallback option
         
         # Ensure duration is within reasonable bounds
         duration = max(1, min(duration, 10))
         
-        # Record audio
-        audio_file = record_audio(duration=duration)
-        if not audio_file:
-            return jsonify({
-                'success': False,
-                'error': 'Failed to record audio'
-            }), 500
+        text = ""
         
-        # Transcribe audio
-        text = transcribe_audio(audio_file)
-        
-        # Clean up audio file
-        try:
-            os.remove(audio_file)
-        except:
-            pass
+        if use_file_method:
+            # Use file-based recording method (fallback)
+            audio_file = record_audio_file(duration=duration)
+            if audio_file:
+                text = transcribe_audio_file(audio_file)
+                # Clean up audio file
+                try:
+                    os.remove(audio_file)
+                except:
+                    pass
+        else:
+            # Use direct speech recognition (preferred)
+            text = listen_for_speech(duration=duration)
         
         if not text:
             return jsonify({
@@ -410,41 +493,115 @@ def process_text_command():
             'error': str(e)
         }), 500
 
+@app.route('/api/devices/status', methods=['GET'])
+def get_device_status():
+    """Get current status of all devices from Firebase"""
+    try:
+        if not is_firebase_initialized:
+            return jsonify({
+                'success': False,
+                'error': 'Firebase not initialized'
+            }), 500
+        
+        # Get current device states
+        commands_ref = db.reference('/commands')
+        commands = commands_ref.get() or {}
+        
+        return jsonify({
+            'success': True,
+            'devices': {
+                'fan': commands.get('fan', 'off'),
+                'light': commands.get('light', 'off'),
+                'mood': commands.get('mood', 'off'),
+                'servo': commands.get('servo', '0'),
+                'buzzer': commands.get('buzzer', {'status': 'off'})
+            },
+            'timestamp': datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        print(f"❌ Get device status failed: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/devices/control', methods=['POST'])
+def control_device():
+    """Direct device control endpoint"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'No data provided'
+            }), 400
+        
+        device = data.get('device')
+        command = data.get('command')
+        value = data.get('value')
+        
+        if not device or not command:
+            return jsonify({
+                'success': False,
+                'error': 'Device and command required'
+            }), 400
+        
+        # Validate device
+        valid_devices = ['fan', 'light', 'mood', 'servo', 'buzzer']
+        if device not in valid_devices:
+            return jsonify({
+                'success': False,
+                'error': f'Invalid device. Valid devices: {valid_devices}'
+            }), 400
+        
+        # Send command to Firebase
+        success = send_firebase_command(device, command, value)
+        
+        return jsonify({
+            'success': success,
+            'device': device,
+            'command': command,
+            'value': value,
+            'timestamp': datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        print(f"❌ Device control failed: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 def run_continuous_mode():
     """Original continuous listening mode"""
     print("🔊 VoiceOps Assistant with Firebase Started (Ctrl+C to stop)")
     print(f"🔥 Connected to Firebase: {FIREBASE_DB_URL}")
     print(f"🔑 Password: '{PASSWORD}' to unlock all devices")
+    print("🎛️ Available devices: fan, light, mood, servo, buzzer")
     
     try:
         while True:
-            audio_file = record_audio(duration=3)
-            if audio_file:
-                text = transcribe_audio(audio_file)
+            # Use direct speech recognition
+            text = listen_for_speech(duration=5)
+            
+            if text:
+                result = parse_command(text)
+                print(f"🧠 Intent: {result['intent']}")
+                print(f"💬 Response: {result['response']}")
+                print(f"⚙ Actions: {result.get('actions', [])}")
                 
-                # Clean up audio file
-                try:
-                    os.remove(audio_file)
-                except:
-                    pass
-
-                if text:
-                    result = parse_command(text)
-                    print(f"🧠 Intent: {result['intent']}")
-                    print(f"💬 Response: {result['response']}")
-                    print(f"⚙ Actions: {result.get('actions', [])}")
-                    
-                    if result.get('firebase_success'):
-                        print("✅ Firebase commands executed successfully")
-                    else:
-                        print("❌ Some Firebase commands failed")
-                    print()
-                    
-                    # Speak response
-                    if result.get('response'):
-                        speak(result['response'])
+                if result.get('firebase_success'):
+                    print("✅ Firebase commands executed successfully")
                 else:
-                    print("🤷 No command detected. Try again.\n")
+                    print("❌ Some Firebase commands failed")
+                print()
+                
+                # Speak response
+                if result.get('response'):
+                    speak(result['response'])
+            else:
+                print("🤷 No command detected. Try again.\n")
             
             time.sleep(0.5)
     
@@ -456,10 +613,13 @@ def run_api_mode(host='127.0.0.1', port=5001):
     print("🚀 Starting VoiceOps Assistant API")
     print(f"🌐 Running on http://{host}:{port}")
     print("📝 Available endpoints:")
-    print("  GET  /health              - Health check")
-    print("  POST /api/voice/listen    - Listen for voice command")
-    print("  POST /api/voice/process   - Process text command")
-    print("=" * 50)
+    print("  GET  /health                    - Health check")
+    print("  POST /api/voice/listen          - Listen for voice command")
+    print("  POST /api/voice/process         - Process text command")
+    print("  GET  /api/devices/status        - Get device status")
+    print("  POST /api/devices/control       - Direct device control")
+    print("🎛️ Supported devices: fan, light, mood, servo, buzzer")
+    print("=" * 60)
     
     app.run(host=host, port=port, debug=False, threaded=True)
 
@@ -470,6 +630,7 @@ def main():
     # Initialize services
     initialize_firebase()
     initialize_tts()
+    initialize_speech_recognition()
     
     if len(sys.argv) > 1 and sys.argv[1] == 'api':
         # API mode
@@ -480,5 +641,5 @@ def main():
         # Continuous mode
         run_continuous_mode()
 
-if _name_ == "_main_":
+if __name__ == "__main__":
     main()
