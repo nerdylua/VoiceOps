@@ -14,7 +14,7 @@ from flask_cors import CORS
 import threading
 
 # --- CONFIG ---
-GEMINI_API_KEY = "AIzaSyAyGquNFvp1NyObrLohnm8pcIryAS4_bTY"
+GEMINI_API_KEY = "AIzaSyCxDhUelfE9KRACL-CAIaWQ9fUOZt5VKCU"
 FIREBASE_DB_URL = "https://iot-el-1842a-default-rtdb.asia-southeast1.firebasedatabase.app/"
 FIREBASE_CRED_FILE = "firebase_key.json"
 
@@ -40,8 +40,34 @@ def initialize_tts():
     if tts_engine is None:
         try:
             tts_engine = pyttsx3.init()
+            
+            # Set speech rate and volume
             tts_engine.setProperty('rate', 150)
             tts_engine.setProperty('volume', 0.9)
+            
+            # Try to set a female voice
+            voices = tts_engine.getProperty('voices')
+            female_voice = None
+            
+            # Look for female voices (common keywords in voice names)
+            for voice in voices:
+                voice_name = voice.name.lower()
+                if any(keyword in voice_name for keyword in ['female', 'woman', 'hazel', 'susan', 'samantha', 'victoria', 'fiona']):
+                    female_voice = voice.id
+                    print(f"🎤 Selected female voice: {voice.name}")
+                    break
+            
+            # If no specific female voice found, try to use the second available voice (often female)
+            if not female_voice and len(voices) > 1:
+                female_voice = voices[1].id
+                print(f"🎤 Using alternate voice: {voices[1].name}")
+            
+            # Set the voice
+            if female_voice:
+                tts_engine.setProperty('voice', female_voice)
+            else:
+                print("🎤 Using default system voice")
+            
             print("✅ TTS initialized successfully")
         except Exception as e:
             print(f"❌ TTS initialization failed: {e}")
@@ -113,7 +139,7 @@ def gemini_friendly_response(user_input: str) -> str:
     try:
         model = genai.GenerativeModel('gemini-1.5-flash')
         
-        prompt = f"""You're a cheerful, friendly home assistant. Be expressive, human-like, and playful, but keep it short and clear. Do not use any emojis in your response.
+        prompt = f"""You're a cheerful, friendly home assistant. Be expressive, human-like, and playful, but keep it short and clear. Do not use any emojis, asterisks, markdown characters or underscores in your response.
 
 User said: "{user_input}"
 Respond in a way that makes them smile."""

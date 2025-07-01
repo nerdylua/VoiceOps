@@ -4,3 +4,6 @@ stepper motor pins-> 16,17,18,19
 servo motor pin->26
 servo motor open state angle -> 60
 servo motor close state angle -> -10
+mq2 gas sensor pin-> 34 (analog) 
+dht22 sensor pin-> 35 (digital) 
+buzzer pin-> 25
