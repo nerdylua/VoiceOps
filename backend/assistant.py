@@ -84,32 +84,23 @@ def initialize_speech_recognition():
 genai.configure(api_key=GEMINI_API_KEY)
 
 def send_firebase_command(device: str, command: str, value=None):
-    """Send command to Firebase Realtime Database"""
+    """Send command to Firebase Realtime Database, normalizing device names."""
+    # Normalize device name: both 'light' and 'lights' should map to 'lights'
+    if device == 'light':
+        device = 'lights'
+    # Add more normalization if needed
     try:
         timestamp = datetime.now().isoformat()
-        
         if device in ["lights", "fan", "party"]:
-            # Send device control commands
             db.reference(f"/commands/{device}").set(command)
             print(f"🔥 Firebase: {device} -> {command}")
-            
         elif device == "buzzer" and command == "trigger":
-            # Send buzzer trigger with duration
             db.reference("/commands/buzzer").set({
                 "status": "trigger",
                 "duration": value or 3000,
                 "timestamp": timestamp
             })
             print(f"🔥 Firebase: buzzer triggered for {value}ms")
-            
-        # Log the command
-        db.reference("/logs").push({
-            "device": device,
-            "command": command,
-            "value": value,
-            "timestamp": timestamp
-        })
-        
         return True
     except Exception as e:
         print(f"❌ Firebase command failed: {e}")
@@ -138,7 +129,6 @@ def gemini_map_command(command: str) -> dict:
 
     prompt = f"""
 You are a smart home assistant. Interpret the user's voice command and convert it into a JSON response in this format:
-
 {{
   "intent": "device_control" | "sensor_query" | "emergency" | "general_chat" | "unknown",
   "response": "natural reply to user",
@@ -150,11 +140,11 @@ You are a smart home assistant. Interpret the user's voice command and convert i
     }}
   ]
 }}
-
 Special commands:
 - For device control, use "on"/"off" commands (not "turn_on"/"turn_off")
 - For emergency/alert, trigger buzzer
 - For casual conversation, use general_chat intent
+- If the user says 'light' or 'lights', always map to the device key 'lights'.
 
 Command: "{command}"
 Respond only with valid JSON and nothing else.
