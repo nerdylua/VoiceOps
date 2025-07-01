@@ -425,9 +425,9 @@ def api_process_text_command():
         if not command:
             return jsonify({'success': False, 'error': 'Command cannot be empty'}), 400
         result = parse_command(command)
-        # Speak response in a thread if requested
+        # Speak response directly (not in a thread)
         if speak_response and result.get('response'):
-            threading.Thread(target=speak, args=(result['response'],)).start()
+            speak(result['response'])
         return jsonify({
             'success': True,
             'command': command,
@@ -461,9 +461,9 @@ def api_listen_voice_command():
                 'timestamp': datetime.now().isoformat()
             })
         result = parse_command(text)
-        # Speak response in a thread if requested
+        # Speak response directly (not in a thread)
         if speak_response and result.get('response'):
-            threading.Thread(target=speak, args=(result['response'],)).start()
+            speak(result['response'])
         return jsonify({
             'success': True,
             'command': text,
