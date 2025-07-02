@@ -5,10 +5,10 @@
 
 // Wi-Fi credentials
 #define WIFI_SSID "Neo7"
-#define WIFI_PASSWORD "nihaalsp7"
+#define WIFI_PASSWORD "nihaalsp8"
 
 // Firebase credentials
-#define API_KEY "your_gemini_api_key"
+#define API_KEY "your_firebase_api_key"
 #define DATABASE_URL "https://iot-el-1842a-default-rtdb.asia-southeast1.firebasedatabase.app/"
 #define USER_EMAIL "testuser@abc.com"
 #define USER_PASSWORD "12345678"
@@ -41,7 +41,7 @@ FirebaseConfig config;
 // MQ2 Gas sensor, DHT22, and Buzzer
 #define MQ2_PIN 34  // Analog pin for MQ2
 #define DHT22_PIN 35  // Digital pin for DHT22
-#define BUZZER_PIN 25  // Digital pin for buzzer
+#define BUZZER_PIN 9  // Digital pin for buzzer
 
 // Device instances
 Stepper stepper(STEPPER_STEPS, IN1, IN2, IN3, IN4);
@@ -49,10 +49,13 @@ Servo doorServo;
 
 // State variables
 bool fanRunning = false;
+bool buzzerRunning = false;
 unsigned long lastFirebaseCheck = 0;
+unsigned long buzzerStartTime = 0;
 
 // Timing intervals
 #define FIREBASE_CHECK_INTERVAL 2000  // Check Firebase every 2 seconds
+#define BUZZER_DURATION 10000  // Buzzer runs for 10 seconds
 
 void setup() {
   Serial.begin(115200);
@@ -161,12 +164,19 @@ void loop() {
     lastFirebaseCheck = currentTime;
   }
   
+  // Check buzzer timing (auto turn off after 10 seconds)
+  if (buzzerRunning && (currentTime - buzzerStartTime >= BUZZER_DURATION)) {
+    buzzerRunning = false;
+    digitalWrite(BUZZER_PIN, LOW);
+    Serial.println("🔇 Buzzer automatically turned OFF after 10 seconds");
+  }
+  
   delay(50);  // Small delay to prevent overwhelming the system
 }
 
 void checkFirebaseCommands() {
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("⚠️ Wi-Fi disconnected, attempting reconnection...");
+    Serial.println("⚠ Wi-Fi disconnected, attempting reconnection...");
     connectToWiFi();
     return;
   }
@@ -212,6 +222,16 @@ void checkFirebaseCommands() {
   } else {
     Serial.println("❌ Failed to read servo command");
   }
+
+  // Check buzzer command
+  if (Firebase.RTDB.getString(&fbdo, "/commands/buzzer")) {
+    String buzzerState = fbdo.stringData();
+    Serial.print("🔊 Buzzer command: ");
+    Serial.println(buzzerState);
+    controlBuzzer(buzzerState);
+  } else {
+    Serial.println("❌ Failed to read buzzer command");
+  }
 }
 
 void controlNormalLEDs(String state) {
@@ -246,6 +266,27 @@ void controlServo(String state) {
   } else if (state == "off") {
     doorServo.write(SERVO_CLOSE_ANGLE);
     Serial.println("🔧 Servo OFF (door closed)");
+  }
+}
+
+void controlBuzzer(String state) {
+  if (state == "on") {
+    if (!buzzerRunning) {
+      buzzerRunning = true;
+      buzzerStartTime = millis();
+      digitalWrite(BUZZER_PIN, HIGH);
+      Serial.println("🔊 Buzzer ON (will run for 10 seconds)");
+    } else {
+      Serial.println("🔊 Buzzer already running");
+    }
+  } else if (state == "off") {
+    if (buzzerRunning) {
+      buzzerRunning = false;
+      digitalWrite(BUZZER_PIN, LOW);
+      Serial.println("🔇 Buzzer manually turned OFF");
+    } else {
+      Serial.println("🔇 Buzzer already OFF");
+    }
   }
 }
 
